@@ -148,36 +148,67 @@ def stars_for(p) -> int:
     return 3 if pct >= 0.6 else 2 if pct >= 0.4 else 1
 
 
-# Shared voice logic. Picks the most natural English voice on the device (Premium /
-# Enhanced / Siri-style voices first), skips Apple's novelty voices (Zarvox, Bubbles,
-# Bad News, ...), and honours the voice chosen on the setup screen (saved in localStorage).
-VOICE_JS = r"""
-const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|fred|good news|hysterical|jester|junior|kathy|organ|princess|ralph|superstar|trinoids|whisper|wobble|zarvox|grandma|grandpa|eddy|flo|reed|rocko|sandy|shelley/i;
-const PREFER = [/premium/i, /enhanced/i, /neural|natural/i, /siri/i, /^ava/i, /^zoe/i, /^samantha/i,
-                /^allison/i, /^susan/i, /^karen/i, /^serena/i, /^moira/i, /google us english/i];
-function englishVoices() {
-  return speechSynthesis.getVoices()
-    .filter(v => v.lang && v.lang.toLowerCase().startsWith('en') && !NOVELTY.test(v.name));
-}
-function bestVoice() {
-  const vs = englishVoices();
-  let saved = null;
-  try { saved = localStorage.getItem('rob_voice'); } catch (e) {}
-  if (saved) { const v = vs.find(v => v.voiceURI === saved); if (v) return v; }
-  for (const r of PREFER) { const v = vs.find(v => r.test(v.name)); if (v) return v; }
-  return vs.find(v => v.lang.toLowerCase() === 'en-us') || vs[0] || null;
-}
-function speakText(t) {
-  try {
-    const u = new SpeechSynthesisUtterance(t);
-    const v = bestVoice();
-    if (v) { u.voice = v; u.lang = v.lang; }
-    u.rate = 0.95; u.pitch = 1.0;   // natural speed and pitch sound the most human
-    speechSynthesis.cancel(); speechSynthesis.speak(u);
-  } catch (e) {}
-}
-try { speechSynthesis.getVoices(); } catch (e) {}
+# Voice. iPhones/iPads only allow speech in the page that was actually tapped. Taps land
+# on the main Streamlit page, not inside the little iframes, so the voice engine lives in
+# the main page (installed with st.html below). The first tap anywhere unlocks it, and
+# from then on every screen can talk on its own. Iframes call window.parent.__robSay().
+VOICE_CORE = r"""
+(function () {
+  if (window.__robSay) return;
+  const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|fred|good news|hysterical|jester|junior|kathy|organ|princess|ralph|superstar|trinoids|whisper|wobble|zarvox|grandma|grandpa|eddy|flo|reed|rocko|sandy|shelley/i;
+  const PREFER = [/premium/i, /enhanced/i, /neural|natural/i, /siri/i, /^ava/i, /^zoe/i, /^samantha/i,
+                  /^allison/i, /^susan/i, /^karen/i, /^serena/i, /^moira/i, /google us english/i];
+  function voices() {
+    try {
+      return speechSynthesis.getVoices()
+        .filter(v => v.lang && v.lang.toLowerCase().startsWith('en') && !NOVELTY.test(v.name));
+    } catch (e) { return []; }
+  }
+  function best() {
+    const vs = voices();
+    let saved = null;
+    try { saved = localStorage.getItem('rob_voice'); } catch (e) {}
+    if (saved) { const v = vs.find(v => v.voiceURI === saved); if (v) return v; }
+    for (const r of PREFER) { const v = vs.find(v => r.test(v.name)); if (v) return v; }
+    return vs.find(v => v.lang.toLowerCase() === 'en-us') || vs[0] || null;
+  }
+  function say(t) {
+    try {
+      const u = new SpeechSynthesisUtterance(t);
+      const v = best();
+      if (v) { u.voice = v; u.lang = v.lang; }
+      u.rate = 0.95; u.pitch = 1.0;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  // Unlock speech on the first real tap (iOS rule): speak a silent utterance inside the tap.
+  let unlocked = false;
+  function unlock() {
+    if (unlocked) return;
+    unlocked = true;
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
+  }
+  ['touchend', 'pointerup', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, unlock, true));
+  window.__robVoices = voices;
+  window.__robBest = best;
+  window.__robSay = say;
+  try { speechSynthesis.getVoices(); } catch (e) {}
+})();
 """
+
+# Used inside each iframe: borrow the main page's voice engine (fall back to a local one).
+VOICE_JS = r"""
+var HOST = window;
+try { if (window.parent !== window && window.parent.__robSay) HOST = window.parent; } catch (e) {}
+if (!HOST.__robSay) { HOST = window; (new Function(""" + json.dumps(VOICE_CORE) + r"""))(); }
+function speakText(t) { HOST.__robSay(t); }
+function englishVoices() { return HOST.__robVoices(); }
+function bestVoice() { return HOST.__robBest(); }
+"""
+
+
+def install_voice():
+    st.html(f"<script>{VOICE_CORE}</script>", unsafe_allow_javascript=True)
 
 
 def speak_js(text: str, auto: bool) -> str:
@@ -233,7 +264,7 @@ def voice_picker():
     }};
     function test() {{ speakText('Hi friend! Red or black? Yay, you keep the card!'); }}
     fill();
-    try {{ speechSynthesis.onvoiceschanged = fill; }} catch (e) {{}}
+    try {{ HOST.speechSynthesis.addEventListener('voiceschanged', fill); }} catch (e) {{}}
     setTimeout(fill, 500); setTimeout(fill, 1500);
     </script></body></html>"""
     st.iframe(doc, height=150)
@@ -697,6 +728,7 @@ def results_screen():
 
 
 # ---------------------------------------------------------------- router
+install_voice()
 ss.setdefault("cfg", default_cfg())
 ss.setdefault("phase", "setup")
 
