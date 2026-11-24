@@ -15,7 +15,7 @@ import random
 import streamlit as st
 
 st.set_page_config(
-    page_title="Red or Black!",
+    page_title="Kaila's Red or Black",
     page_icon="🃏",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -81,6 +81,8 @@ def page_css() -> str:
     .av, .medal, .stk, .stars, .vs {{ font-family: "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif; }}
     .title {{ text-align:center; font-size:60px; font-weight:900; line-height:1.05; margin:0 0 4px;
               letter-spacing:-1px; }}
+    .title .owner {{ font-size:34px; color:#8e24aa; font-weight:800; letter-spacing:0;
+                     margin-bottom:-6px; font-family:"Chalkboard SE","Comic Sans MS","Marker Felt",cursive; }}
     .title .r {{ color:#e53935; }} .title .b {{ color:#111; }}
     .sub {{ text-align:center; color:#888; font-size:14px; margin-bottom:10px; }}
     .board {{ display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin:2px 0 6px; }}
@@ -538,7 +540,8 @@ def on_setup():
 
 # ---------------------------------------------------------------- screens
 def title():
-    st.markdown('<div class="title"><span class="r">♥ Red</span> or <span class="b">Black ♠</span></div>',
+    st.markdown('<div class="title"><div class="owner">Kaila&#39;s</div>'
+                '<span class="r">♥ Red</span> or <span class="b">Black ♠</span></div>',
                 unsafe_allow_html=True)
 
 
