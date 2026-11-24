@@ -375,7 +375,7 @@ def prize_component(boxes, talk: bool, token: int):
 # ---------------------------------------------------------------- game logic
 def default_cfg():
     return {"n": 2, "names": [""] * MAX_KIDS,
-            "avatars": AVATARS[:MAX_KIDS], "cards_each": 5, "talk": True}
+            "avatars": AVATARS[:MAX_KIDS], "talk": True}
 
 
 def start_game():
@@ -388,7 +388,7 @@ def start_game():
     ss.deck = new_deck()
     ss.turn = 0
     ss.cur = 0
-    ss.total = cfg["n"] * cfg["cards_each"]
+    ss.total = cfg["n"] * (52 // cfg["n"])  # whole deck split evenly: 52, 26, 17, 13
     ss.last = None
     ss.results = None
     ss.phase = "turn"
@@ -403,7 +403,7 @@ def on_start():
         return
     ss.setup_error = None
     ss.cfg = {"n": n, "names": names, "avatars": avatars,
-              "cards_each": ss.w_cards, "talk": ss.w_talk}
+              "talk": ss.w_talk}
     start_game()
 
 
@@ -493,7 +493,6 @@ def setup_screen():
     cfg = ss.cfg
     # seed widget values (Streamlit forgets widget state while they're hidden)
     ss.setdefault("w_n", cfg["n"])
-    ss.setdefault("w_cards", cfg["cards_each"])
     ss.setdefault("w_talk", cfg["talk"])
     for i in range(MAX_KIDS):
         ss.setdefault(f"w_name{i}", cfg["names"][i])
@@ -512,7 +511,6 @@ def setup_screen():
         c2.text_input("Name (optional, the dealer says it out loud)", key=f"w_name{i}",
                       placeholder=ANIMAL_NAMES.get(ss[f"w_av{i}"], ""))
 
-    st.select_slider("Cards for each kid", options=[3, 5, 8, 10, 13], key="w_cards")
     st.toggle("🔊 Talking dealer", key="w_talk")
 
     if ss.get("setup_error"):
