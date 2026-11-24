@@ -1,10 +1,8 @@
 """
 Red or Black! — a picture-first card game for little kids.
 
-Modes
-  🤖 Robot dealer  : the app shuffles a real 52-card deck and deals. Kids can play
-                     alone (vs. the robot) or pass the iPad around (up to 4 kids).
-  🧑 Grown-up dealer: you deal real cards; the app is the scoreboard + celebrations.
+The robot dealer shuffles a real 52-card deck and deals. Kids can play alone
+(vs. the robot) or pass the iPad around (up to 4 kids).
 
 Kid-facing screens use only pictures, colors and a talking dealer (iPad speech),
 so non-readers can play. Text is only on the grown-up setup screen.
@@ -51,8 +49,6 @@ BIG_BUTTONS = {
     # key: (height, background, text color, label size)
     "pick_red": ("210px", "radial-gradient(circle at 30% 25%, #ff7373, #c62828)", "#fff", "84px"),
     "pick_black": ("210px", "radial-gradient(circle at 30% 25%, #5a5a5a, #0b0b0b)", "#fff", "84px"),
-    "judge_yes": ("190px", "radial-gradient(circle at 30% 25%, #7ddc7f, #2e7d32)", "#fff", "84px"),
-    "judge_no": ("190px", "radial-gradient(circle at 30% 25%, #d0d0d0, #757575)", "#fff", "84px"),
     "next_btn": ("130px", "linear-gradient(#ffd54f, #ffa000)", "#000", "64px"),
     "again_btn": ("110px", "linear-gradient(#81c784, #388e3c)", "#fff", "54px"),
     "setup_btn": ("110px", "linear-gradient(#e0e0e0, #9e9e9e)", "#000", "54px"),
@@ -148,10 +144,6 @@ def stars_for(p) -> int:
         return 1
     pct = p["cards"] / p["turns"]
     return 3 if pct >= 0.6 else 2 if pct >= 0.4 else 1
-
-
-def dealer_icon() -> str:
-    return "🤖" if ss.cfg["mode"] == "robot" else "🧑"
 
 
 def speak_js(text: str, auto: bool) -> str:
@@ -382,7 +374,7 @@ def prize_component(boxes, talk: bool, token: int):
 
 # ---------------------------------------------------------------- game logic
 def default_cfg():
-    return {"mode": "robot", "n": 2, "names": [""] * MAX_KIDS,
+    return {"n": 2, "names": [""] * MAX_KIDS,
             "avatars": AVATARS[:MAX_KIDS], "cards_each": 5, "talk": True}
 
 
@@ -403,7 +395,6 @@ def start_game():
 
 
 def on_start():
-    mode = "robot" if ss.w_mode.startswith("🤖") else "real"
     n = ss.w_n
     names = [ss.get(f"w_name{i}", "") for i in range(MAX_KIDS)]
     avatars = [ss.get(f"w_av{i}", AVATARS[i]) for i in range(MAX_KIDS)]
@@ -411,7 +402,7 @@ def on_start():
         ss.setup_error = "Each kid needs a different animal so they can find themselves."
         return
     ss.setup_error = None
-    ss.cfg = {"mode": mode, "n": n, "names": names, "avatars": avatars,
+    ss.cfg = {"n": n, "names": names, "avatars": avatars,
               "cards_each": ss.w_cards, "talk": ss.w_talk}
     start_game()
 
@@ -432,12 +423,6 @@ def on_pick(color: str):
         return
     card = ss.deck.pop()
     record(card[2] == color, card=card, guess=color)
-
-
-def on_judge(correct: bool):
-    if ss.phase != "turn":
-        return
-    record(correct)
 
 
 def on_next():
@@ -490,9 +475,8 @@ def scoreboard(highlight=None):
         cls = "seat now" if i == highlight else "seat"
         seats.append(f'<div class="{cls}"><div class="av">{p["avatar"]}</div>'
                      f'<div class="num">{p["cards"]}</div>{pile_html(p["cards"])}</div>')
-    if ss.cfg["mode"] == "robot":
-        seats.append(f'<div class="seat robot"><div class="av">🤖</div>'
-                     f'<div class="num">{ss.dealer_cards}</div></div>')
+    seats.append(f'<div class="seat robot"><div class="av">🤖</div>'
+                 f'<div class="num">{ss.dealer_cards}</div></div>')
     st.markdown('<div class="board">' + "".join(seats) + "</div>", unsafe_allow_html=True)
 
 
@@ -508,8 +492,6 @@ def grown_up_controls():
 def setup_screen():
     cfg = ss.cfg
     # seed widget values (Streamlit forgets widget state while they're hidden)
-    ss.setdefault("w_mode", "🤖 Robot dealer: the iPad deals" if cfg["mode"] == "robot"
-                  else "🧑 Grown-up dealer: real cards")
     ss.setdefault("w_n", cfg["n"])
     ss.setdefault("w_cards", cfg["cards_each"])
     ss.setdefault("w_talk", cfg["talk"])
@@ -520,11 +502,8 @@ def setup_screen():
     title()
     st.markdown('<div class="sub">Grown-up setup</div>', unsafe_allow_html=True)
 
-    st.radio("Who is the dealer?",
-             ["🤖 Robot dealer: the iPad deals", "🧑 Grown-up dealer: real cards"],
-             key="w_mode")
     st.radio("How many kids?", [1, 2, 3, 4], horizontal=True, key="w_n")
-    if ss.w_n == 1 and ss.w_mode.startswith("🤖"):
+    if ss.w_n == 1:
         st.caption("Playing alone: the kid tries to keep more cards than the robot.")
 
     for i in range(ss.w_n):
@@ -545,17 +524,10 @@ def turn_screen():
     p = ss.players[ss.cur]
     scoreboard(highlight=ss.cur)
     talk = ss.cfg["talk"]
-    if ss.cfg["mode"] == "robot":
-        turn_component(p["avatar"], f"{spoken_name(p)}, red or black?", talk, ss.turn)
-        c1, c2 = st.columns(2, gap="medium")
-        c1.button(f"♥{T} ♦{T}", key="pick_red", on_click=on_pick, args=("red",), width="stretch")
-        c2.button(f"♠{T} ♣{T}", key="pick_black", on_click=on_pick, args=("black",), width="stretch")
-    else:
-        turn_component(p["avatar"], f"{spoken_name(p)}, red or black?", talk, ss.turn)
-        st.caption("Ask red or black, flip your card, then tap ✅ if they got it or ❌ if you keep it.")
-        c1, c2 = st.columns(2, gap="medium")
-        c1.button("✅", key="judge_yes", on_click=on_judge, args=(True,), width="stretch")
-        c2.button("❌", key="judge_no", on_click=on_judge, args=(False,), width="stretch")
+    turn_component(p["avatar"], f"{spoken_name(p)}, red or black?", talk, ss.turn)
+    c1, c2 = st.columns(2, gap="medium")
+    c1.button(f"♥{T} ♦{T}", key="pick_red", on_click=on_pick, args=("red",), width="stretch")
+    c2.button(f"♠{T} ♣{T}", key="pick_black", on_click=on_pick, args=("black",), width="stretch")
     grown_up_controls()
 
 
@@ -563,15 +535,11 @@ def reveal_screen():
     last = ss.last
     p = ss.players[last["player"]]
     name = spoken_name(p)
-    if last["card"]:
-        color = last["card"][2].capitalize()
-        text = (f"{color}! Yay {name}, you keep the card!" if last["correct"]
-                else f"{color}. Oh no! The robot keeps that one.")
-    else:
-        text = (f"Yay {name}, you keep the card!" if last["correct"]
-                else "The dealer keeps that one. Nice try!")
+    color = last["card"][2].capitalize()
+    text = (f"{color}! Yay {name}, you keep the card!" if last["correct"]
+            else f"{color}. Oh no! The robot keeps that one.")
     scoreboard(highlight=last["player"])
-    reveal_component(last["card"], last["correct"], p["avatar"], dealer_icon(), text,
+    reveal_component(last["card"], last["correct"], p["avatar"], "🤖", text,
                      ss.cfg["talk"], ss.turn)
 
     nxt = ss.turn + 1
@@ -625,7 +593,7 @@ def results_screen():
         rows.append(f"""
         <div class="rank {"first" if not winners else ""}">
           <div class="medal">{"🥇" if not winners else "🙂"}</div>
-          <div class="av">{dealer_icon()}</div>
+          <div class="av">🤖</div>
           <div class="grow">{pile_html(ss.dealer_cards)}</div>
           <div class="num">{ss.dealer_cards}</div><div class="stk"></div>
         </div>""")
