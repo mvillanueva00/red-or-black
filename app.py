@@ -146,19 +146,95 @@ def stars_for(p) -> int:
     return 3 if pct >= 0.6 else 2 if pct >= 0.4 else 1
 
 
+# Shared voice logic. Picks the most natural English voice on the device (Premium /
+# Enhanced / Siri-style voices first), skips Apple's novelty voices (Zarvox, Bubbles,
+# Bad News, ...), and honours the voice chosen on the setup screen (saved in localStorage).
+VOICE_JS = r"""
+const NOVELTY = /albert|bad news|bahh|bells|boing|bubbles|cellos|deranged|fred|good news|hysterical|jester|junior|kathy|organ|princess|ralph|superstar|trinoids|whisper|wobble|zarvox|grandma|grandpa|eddy|flo|reed|rocko|sandy|shelley/i;
+const PREFER = [/premium/i, /enhanced/i, /neural|natural/i, /siri/i, /^ava/i, /^zoe/i, /^samantha/i,
+                /^allison/i, /^susan/i, /^karen/i, /^serena/i, /^moira/i, /google us english/i];
+function englishVoices() {
+  return speechSynthesis.getVoices()
+    .filter(v => v.lang && v.lang.toLowerCase().startsWith('en') && !NOVELTY.test(v.name));
+}
+function bestVoice() {
+  const vs = englishVoices();
+  let saved = null;
+  try { saved = localStorage.getItem('rob_voice'); } catch (e) {}
+  if (saved) { const v = vs.find(v => v.voiceURI === saved); if (v) return v; }
+  for (const r of PREFER) { const v = vs.find(v => r.test(v.name)); if (v) return v; }
+  return vs.find(v => v.lang.toLowerCase() === 'en-us') || vs[0] || null;
+}
+function speakText(t) {
+  try {
+    const u = new SpeechSynthesisUtterance(t);
+    const v = bestVoice();
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = 0.95; u.pitch = 1.0;   // natural speed and pitch sound the most human
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  } catch (e) {}
+}
+try { speechSynthesis.getVoices(); } catch (e) {}
+"""
+
+
 def speak_js(text: str, auto: bool) -> str:
     return f"""
     <script>
+    {VOICE_JS}
     const SAY = {json.dumps(text).replace('</', '<\\/')};
-    function say(t) {{
-      try {{
-        const u = new SpeechSynthesisUtterance(t || SAY);
-        u.rate = 0.92; u.pitch = 1.25;
-        speechSynthesis.cancel(); speechSynthesis.speak(u);
-      }} catch (e) {{}}
-    }}
-    {"setTimeout(() => say(), 350);" if auto else ""}
+    function say(t) {{ speakText(t || SAY); }}
+    {"setTimeout(() => say(), 400);" if auto else ""}
     </script>"""
+
+
+def voice_picker():
+    """Setup-screen widget: lists the iPad's English voices with a preview button."""
+    doc = f"""<!doctype html><html><head>{COMPONENT_BASE_CSS}
+    <style>
+      body {{ overflow:hidden; }}
+      .row {{ display:flex; gap:10px; align-items:center; padding:4px 2px; }}
+      label {{ font-size:14px; color:#333; display:block; margin:0 0 6px 2px; }}
+      select {{ flex:1; font-size:16px; padding:10px; border-radius:10px; border:1px solid #ccc;
+                background:#fff; min-width:0; }}
+      button {{ font-size:18px; padding:10px 16px; border-radius:10px; border:none;
+                background:#ffa000; color:#000; font-weight:700; }}
+      .hint {{ font-size:12px; color:#888; margin:6px 2px 0; }}
+    </style></head><body>
+    <label>Dealer voice</label>
+    <div class="row"><select id="v"></select><button onclick="test()">▶️ Test</button></div>
+    <div class="hint">Want even nicer voices? On the iPad: Settings ➜ Accessibility ➜ Spoken Content ➜
+      Voices ➜ English, then download one marked Enhanced or Premium (Ava and Zoe sound great).
+      Then reload this page.</div>
+    <script>
+    {VOICE_JS}
+    const sel = document.getElementById('v');
+    function fill() {{
+      const vs = englishVoices();
+      const cur = bestVoice();
+      sel.innerHTML = '';
+      const auto = document.createElement('option');
+      auto.value = ''; auto.textContent = '✨ Best available' + (cur ? ' (' + cur.name + ')' : '');
+      sel.appendChild(auto);
+      vs.sort((a, b) => a.name.localeCompare(b.name)).forEach(v => {{
+        const o = document.createElement('option');
+        o.value = v.voiceURI; o.textContent = v.name + ' (' + v.lang + ')';
+        sel.appendChild(o);
+      }});
+      let saved = null; try {{ saved = localStorage.getItem('rob_voice'); }} catch (e) {{}}
+      sel.value = saved && vs.some(v => v.voiceURI === saved) ? saved : '';
+    }}
+    sel.onchange = () => {{
+      try {{ sel.value ? localStorage.setItem('rob_voice', sel.value)
+                       : localStorage.removeItem('rob_voice'); }} catch (e) {{}}
+      test();
+    }};
+    function test() {{ speakText('Hi friend! Red or black? Yay, you keep the card!'); }}
+    fill();
+    try {{ speechSynthesis.onvoiceschanged = fill; }} catch (e) {{}}
+    setTimeout(fill, 500); setTimeout(fill, 1500);
+    </script></body></html>"""
+    st.iframe(doc, height=150)
 
 
 SPEAKER_BTN = """<button class="spk" onclick="say()">🔊</button>"""
@@ -512,6 +588,8 @@ def setup_screen():
                       placeholder=ANIMAL_NAMES.get(ss[f"w_av{i}"], ""))
 
     st.toggle("🔊 Talking dealer", key="w_talk")
+    if ss.w_talk:
+        voice_picker()
 
     if ss.get("setup_error"):
         st.error(ss.setup_error)
