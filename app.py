@@ -353,7 +353,7 @@ def reveal_component(card, correct: bool, avatar: str, dealer: str, text: str, t
     st.iframe(doc, height=276)
 
 
-def prize_component(boxes, talk: bool, token: int):
+def prize_component(boxes, talk: bool, token: int, announce: str = ""):
     """boxes: list of dicts(avatar, stars, emoji, say, big)"""
     items = []
     for i, b in enumerate(boxes):
@@ -430,7 +430,7 @@ def prize_component(boxes, talk: bool, token: int):
     </style></head><body>
     <div class="row">{"".join(items)}</div>
     {SPEAKER_BTN if talk else ""}
-    {speak_js("", False)}
+    {speak_js(announce, talk)}
     <script>
       setTimeout(() => document.querySelectorAll('.box').forEach(b => b.classList.add('ready')), 2400);
       function openBox(el) {{
@@ -439,9 +439,6 @@ def prize_component(boxes, talk: bool, token: int):
         confetti(140);
         {"say(el.dataset.say);" if talk else ""}
       }}
-      // speaker button repeats the first box's message
-      const _first = document.querySelector('.box');
-      window.say = (function(orig) {{ return function(t) {{ orig(t || (_first && _first.dataset.say)); }}; }})(say);
     </script>
     <!-- prize {token} -->
     </body></html>"""
@@ -614,7 +611,9 @@ def reveal_screen():
     color = last["card"][2].capitalize()
     text = (f"{color}! Yay {name}, you keep the card!" if last["correct"]
             else f"{color}. Oh no! The robot keeps that one.")
-    scoreboard(highlight=last["player"])
+    final_turn = ss.turn + 1 >= ss.total
+    # no highlight on the last turn so nobody looks like the winner before the 🏆 screen
+    scoreboard(highlight=None if final_turn else last["player"])
     reveal_component(last["card"], last["correct"], p["avatar"], "🤖", text,
                      ss.cfg["talk"], ss.turn)
 
@@ -631,6 +630,20 @@ def results_screen():
     winners = res["winners"]
 
     title()
+    names = [spoken_name(players[w]) for w in winners]
+    if solo:
+        announce = (f"You beat the robot, {names[0]}! Tap your present!" if winners
+                    else "The robot wins this time. Here is a sticker for you! Tap the present!")
+    elif len(winners) == 1:
+        announce = f"{names[0]} wins! Tap your present!"
+    else:
+        joined = ", ".join(names[:-1]) + " and " + names[-1]
+        announce = f"It's a tie! {joined} all win! Tap your presents!" if len(names) > 2 \
+            else f"It's a tie! {joined} both win! Tap your presents!"
+    if len(winners) > 1:  # tie: show the winners shaking hands
+        st.markdown('<div class="vs" style="font-size:54px">'
+                    + " 🤝 ".join(players[w]["avatar"] for w in winners) + "</div>",
+                    unsafe_allow_html=True)
     # ----- prize boxes
     boxes = []
     for w in winners:
@@ -642,15 +655,15 @@ def results_screen():
         p = players[0]
         boxes.append({"avatar": p["avatar"], "stars": p["stars"], "emoji": res["stickers"][0],
                       "big": False, "say": f"Nice try {spoken_name(p)}! Here is a sticker!"})
-    prize_component(boxes, ss.cfg["talk"], res["token"])
+    prize_component(boxes, ss.cfg["talk"], res["token"], announce)
 
     # ----- ranking
     order = sorted(range(len(players)), key=lambda i: -players[i]["cards"])
     rows, prev, place = [], None, 0
     for pos, i in enumerate(order):
         p = players[i]
-        if p["cards"] != prev:
-            place, prev = pos + 1, p["cards"]
+        if p["cards"] != prev:  # ties share a medal; next score gets the next medal
+            place, prev = place + 1, p["cards"]
         stars = "".join(f'<span class="{"" if k < p["stars"] else "off"}">⭐</span>' for k in range(3))
         won = i in winners
         extra = res["prizes"][i][0] if won else res["stickers"][i]
